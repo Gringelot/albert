@@ -6,27 +6,51 @@ A live, Jarvis-style console for the `/albert` harness. It watches the global ru
 
 ## Run
 
-- Double-click `start.cmd` (starts the server and opens the browser), or
+- On Windows, double-click `start.cmd` (starts the server and opens the browser)
+- On macOS or Linux, run `./start.sh` (starts the server and opens the browser)
 - `node server.mjs` from this directory.
 
-Note that `start.cmd` runs the server in the foreground: closing that console window stops it. For
-an always-on instance use the Scheduled Task below.
+Each start script runs the server in the foreground: closing its terminal stops it. For an
+always-on instance, install Albert with its default service enabled.
 
-## Always on (AlbertConsole Scheduled Task)
+## Always on (AlbertConsole Cron)
 
-A Scheduled Task named `AlbertConsole` keeps the server up permanently at
-`http://127.0.0.1:4400`. It runs `run-hidden.vbs`, which launches node with no console window.
+The default installer keeps the server running at `http://127.0.0.1:4400` with the native service
+mechanism for its platform:
 
-How it stays alive: the task has two triggers. One starts it at logon. The other is a 1-minute
+- Windows: Scheduled Task `AlbertConsole`
+- macOS: launchd agent `com.sdraugel.albert.console`
+- Linux: systemd service `albert-console.service`, when systemd is available
+
+The macOS and Linux services restart the server when it exits. Windows uses a logon trigger and a
+one-minute watchdog. If Linux does not have systemd available, install with `--no-task`; the
+foreground and `run-forever.sh` launchers still work.
+
+### Restarting and stopping (read this before using Stop-ScheduledTask)
+
+Use the platform's scripts after changing `server.mjs`, `lib/`, or `public/`. They stop the port
+owner before restarting or disabling the service, so an old server cannot keep serving stale code.
+
+```
+Windows:       restart.cmd / stop.cmd
+macOS/Linux:   ./restart.sh / ./stop.sh
+```
+
+`stop` disables the installed service before killing the listener. A plain port kill is temporary:
+the service manager will restart the server.
+
+### Windows Scheduled Task details
+
+
+On Windows, the Scheduled Task runs `run-hidden.vbs`, which launches node with no console window.
+the task has two triggers. One starts it at logon. The other is a 1-minute
 watchdog repetition; with `MultipleInstancesPolicy = IgnoreNew`, each tick is a no-op while the
 server is alive and a revival when it is not, so a crash self-heals within about a minute.
 `ExecutionTimeLimit` is `PT0S` (no limit), otherwise the 3-day default would kill it.
 
 The launcher waits on node and propagates its exit code rather than spawning and exiting. That
 keeps the task in the `Running` state for as long as the server lives, which is what makes the
-watchdog's IgnoreNew check meaningful. Do not "simplify" it back to a fire-and-forget launch.
-
-### Restarting and stopping (read this before using Stop-ScheduledTask)
+watchdog's `IgnoreNew` check meaningful. Do not "simplify" it back to a fire-and-forget launch.
 
 `Stop-ScheduledTask` does NOT stop the server, and this trips people up. The task's action is
 `wscript`, which waits on a `node` child. Stopping the task kills only `wscript`; node survives as
@@ -51,21 +75,24 @@ Unregister-ScheduledTask -TaskName AlbertConsole -Confirm:$false   # remove enti
 Killing the node process alone is not enough to stop it for good: the watchdog revives it within
 about a minute. Disable the task first, which is what `stop.cmd` does.
 
-### Fallback when Task Scheduler is unavailable (run-forever.vbs)
+### Fallback supervisor
 
-Some security policies block scheduled-task creation for non-interactive processes. The fallback
-is `run-forever.vbs`: it launches the server hidden and relaunches it within seconds if it dies
-(after five consecutive fast exits it gives up, so a squatted port cannot make it spin). Point an
-HKCU Run entry at it for start-at-logon:
+`run-forever.vbs` on Windows and `run-forever.sh` on macOS/Linux will relaunch the server after an
+exit. After five consecutive exits in under ten seconds, they give up so a squatted port cannot
+spin indefinitely. Use one supervisor or service mechanism at a time; otherwise the loser of the
+port race burns through its retry budget.
+
+On Windows, Some security policies block scheduled-task creation for non-interactive processes.
+To launch when Task Scheduler is unavailable, point an HKCU Run entry at `run-forever.vbs` for
+start-at-logon:
 
 ```powershell
 Set-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name AlbertConsole `
   -Value 'wscript.exe "<ConsoleDir>\run-forever.vbs"'
 ```
 
-Use one mechanism or the other, not both (the loser of the port race would burn its five
-retries at every logon). `stop.cmd` handles both: it disables the task if present, kills any
-run-forever supervisor, then kills the port owner.
+`stop.cmd` and `stop.sh` handle both cases: they stop the service if present, kill any
+`run-forever` supervisor, then kill the port owner.
 
 ## Flags
 

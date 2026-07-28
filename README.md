@@ -69,7 +69,9 @@ conversation (and in the Comms feed).
 
 ---
 
-## Quickstart (Windows)
+## Quickstart
+
+### Windows
 
 Requirements: **Windows 10/11**, **PowerShell 5.1+**, **Node 20+** (Node 26 recommended),
 and **[Claude Code](https://claude.com/claude-code)** already installed and signed in.
@@ -118,6 +120,78 @@ To remove everything:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
 ```
+
+### macOS and Linux
+
+Requirements: **macOS 13.5+**, or **Linux x64 or arm64 with kernel 4.18+.**, plus **glibc 2.28**
+and **Node 20+** (Node 26 recommended), and **[Claude Code](https://claude.com/claude-code)**
+already installed and signed in.
+
+```sh
+git clone https://github.com/Sdraugel/albert.git
+cd albert
+./install.sh
+```
+
+#### Install options
+
+| Purpose | macOS / Linux | Windows |
+|---|---|---|
+| Claude Code configuration directory | `--claude-dir PATH` | `-ClaudeDir PATH` |
+| Project-root context | `--projects-dir PATH` | `-ProjectsDir PATH` |
+| Console installation directory | `--console-dir PATH` | `-ConsoleDir PATH` |
+| Console port | `--port N` | `-Port N` |
+| Run the synthetic-data demo without installing | `--demo-only` | `-DemoOnly` |
+| Install the harness without the Console | `--no-console` | `-NoConsole` |
+| Do not register the always-on Console service | `--no-task` | `-NoTask` |
+
+For example, to install only the harness into a non-default Claude Code directory:
+
+```sh
+./install.sh --claude-dir /path/to/.claude --no-console
+```
+
+Linux puts the Console under `${XDG_DATA_HOME:-$HOME/.local/share}/albert-console`
+and installs the user service under `${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/albert-console.service`.
+
+macOS puts the Console under `~/Library/Application Support/AlbertConsole`
+and installs the launchd agent with the label `com.sdraugel.albert.console`.
+
+Use `--no-task` when you do not want an always-on Console service, or when systemd is unavailable
+on Linux. Use `--no-console` to install only the harness.
+
+```sh
+./uninstall.sh
+```
+
+On macOS and Linux, `./install.sh --demo-only` generates synthetic data and runs the Console in
+the foreground. It does not install Albert. Chat remains optional and repo-local:
+
+```sh
+./chat/setup.sh  # one-time: builds chat/.venv and installs Chainlit + the Claude Agent SDK
+./chat/start.sh  # serves the chat on 127.0.0.1:4401
+```
+
+## Platform support
+
+| Area | Windows | macOS | Linux |
+|---|---|---|---|
+| Harness installation | Implemented | Implemented | Implemented |
+| Console foreground/runtime | Implemented | Implemented | Implemented |
+| Console per-user service | Scheduled Task | launchd | systemd user service |
+| Standalone Console lifecycle launchers | `console/*.cmd`, `console/*.vbs` | `console/*.sh` | `console/*.sh` |
+| Chat setup/start/stop | Implemented | Implemented | Implemented |
+| Chat `start_albert_run` | Implemented | Implemented | Implemented |
+| Chat autostart/supervision | Implemented | Implemented | Implemented |
+
+The Console server is Node and cross-platform. The Windows lifecycle files are optional manual
+launchers; installed macOS launchd and Linux systemd user services already cover Console service
+lifecycle. Chat needs its own one-time setup on every platform. Its `run-forever` launcher is
+optional and can be registered with your platform's per-user login service.
+
+Harness source templates remain Windows-oriented and `tools/render-unix-install.mjs` translates
+them for Unix installation. This is a maintenance and canonicalization gap, not a proven runtime
+blocker for the current Unix installer.
 
 ---
 

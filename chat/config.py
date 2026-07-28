@@ -26,6 +26,7 @@ if not INBOX_MJS.exists():
         INBOX_MJS = _repo_copy
 
 LAUNCH_PS1 = CHAT_DIR / "launch_run.ps1"
+LAUNCH_SH = CHAT_DIR / "launch_run.sh"
 SYSTEM_PROMPT_PATH = CHAT_DIR / "system_prompt.md"
 
 # A message sent to a run in one of these states would sit in the inbox forever:

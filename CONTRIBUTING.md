@@ -14,6 +14,10 @@ Thanks for your interest. A few ground rules keep this project simple, private, 
 - **Windows-first.** The launchers (`.cmd`, `.vbs`), the always-on Scheduled Task, and the
   installer target Windows and PowerShell 5.1. Keep them working. Cross-platform support is
   welcome as long as it does not break the Windows path.
+- **Cross-platform launchers.** MacOS and Linux `.sh` launchers live side-by-side with
+  their Windows `.ps1`, `.cmd`, and `.vbs` counterparts. Unix scripts must remain POSIX
+  `sh`compatible. Unix services are per-user only, never use `sudo`, and must fail clearly
+  if their service manager is unavailable unless `--no-task` is supplied.
 - **House style.** Match the terse voice of the existing agents and code. No em or en
   dashes in prose or comments; use commas, periods, or hyphens. Comments explain WHY, not
   WHAT.
@@ -21,7 +25,7 @@ Thanks for your interest. A few ground rules keep this project simple, private, 
 ## Before you open a PR
 
 - Run `node --check` on every `.mjs` / `.js` file you touched.
-- If you changed the console, run it (`console\restart.cmd`) and confirm the affected view
+- If you changed the console, run it (`console\restart.cmd` on Windows or `console/restart.sh` on Unix) and confirm the affected view
   still renders in the browser.
 - If you changed an agent, the skill, or a template token, run
   `install.ps1 -ClaudeDir <scratch> -NoConsole` into a throwaway folder and confirm every

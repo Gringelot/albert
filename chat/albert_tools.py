@@ -17,6 +17,7 @@ from claude_agent_sdk import create_sdk_mcp_server, tool
 from config import (
     INBOX_MJS,
     LAUNCH_PS1,
+    LAUNCH_SH,
     PROJECTS_DIR,
     STORE_ROOT,
     TERMINAL_STATUSES,
@@ -203,18 +204,21 @@ def make_albert_server(state: SessionState):
         if not goal:
             return _text("goal became empty after removing unsafe characters.", is_error=True)
         prompt = f"/loop /albert {goal}"
-        cmd = [
-            "powershell",
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            str(LAUNCH_PS1),
-            "-Project",
-            str(project),
-            "-Prompt",
-            prompt,
-        ]
+        if os.name == "nt":
+            cmd = [
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(LAUNCH_PS1),
+                "-Project",
+                str(project),
+                "-Prompt",
+                prompt,
+            ]
+        else:
+            cmd = ["sh", str(LAUNCH_SH), str(project), prompt]
         try:
             proc = await asyncio.to_thread(_run, cmd)
         except (OSError, subprocess.TimeoutExpired) as e:

@@ -18,20 +18,26 @@ survives closing the chat.
 
 ## Prerequisites
 
-- Windows, with the Albert harness installed (`install.ps1` from the repo root; it deploys
-  `_inbox.mjs` into the run store).
-- **Python 3.12** available as `py -3.12` (the default `python` may be newer than Chainlit
-  supports; setup builds the venv from 3.12 explicitly).
+- Albert harness installed (`install.ps1` on Windows or `./install.sh` on macOS/Ubuntu; it
+  deploys `_inbox.mjs` into the run store).
+- **Python 3.12** available as `py -3.12` on Windows or `python3.12` on macOS/Ubuntu (the
+  default `python` may be newer than Chainlit supports; setup builds the venv from 3.12 explicitly).
 - Node on PATH (the harness already requires it).
 - Claude Code installed and logged in. The concierge inherits that login; no API key is
   needed or read.
 
 ## Setup and run
 
-```
+```text
+# Windows, from chat\
 setup.cmd      # one-time: creates .venv from Python 3.12 and installs requirements
 start.cmd      # serves http://127.0.0.1:4401 and opens the browser (foreground)
 stop.cmd       # kills whatever owns port 4401
+
+# macOS or Ubuntu, from the repository root
+./chat/setup.sh
+./chat/start.sh
+./chat/stop.sh
 ```
 
 `start.cmd` runs in the foreground: closing that window stops the chat. For an always-on
@@ -47,6 +53,12 @@ Set-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name Alb
 `stop.cmd` kills the supervisor and the server together (a plain port kill is not enough;
 the supervisor would relaunch it).
 
+`start.sh` and `stop.sh` have the same foreground and cleanup behavior on macOS and Ubuntu.
+For optional Unix autostart, point a per-user launchd agent or systemd user unit at
+`chat/run-forever.sh`. It preserves the Windows supervisor's five-second restart delay and
+five-fast-failure cutoff. Chat-initiated runs open Terminal on macOS and `x-terminal-emulator`
+on Ubuntu; a graphical terminal is required.
+
 Resolved versions this was built and tested against: Python 3.12.6, chainlit 2.11.1,
 claude-agent-sdk 0.2.126.
 
@@ -58,8 +70,9 @@ claude-agent-sdk 0.2.126.
 
 ## Configuration (env vars, all optional)
 
-- `ALBERT_STORE_ROOT` - run store root (default `%USERPROFILE%\.claude\agent-runs`). Point it
-  at demo data (`node tools\make-demo-data.mjs <out>` then `<out>\agent-runs`) to try the UI
+- `ALBERT_STORE_ROOT` - run store root (default `%USERPROFILE%\.claude\agent-runs` or
+  `$HOME/.claude/agent-runs`). Point it at demo data (`node tools\make-demo-data.mjs <out>`
+  then `<out>\agent-runs`) to try the UI
   without real runs.
 - `ALBERT_PROJECTS_DIR` - where `start_albert_run` may launch runs (default: the parent
   directory of this repo, same as the installer's default).
