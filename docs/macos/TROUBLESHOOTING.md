@@ -31,6 +31,21 @@ lsof -nP -iTCP:4400 -sTCP:LISTEN                                      # who owns
 - **`node` errors in the log after a node upgrade**: the plist pins the node path from
   install time; re-run `./install.sh` to re-pin.
 
+## The console came back after I stopped it
+
+Only if you stopped it with a bare `launchctl bootout`. That unloads the job from the
+running domain but leaves the plist in `~/Library/LaunchAgents`, and `RunAtLoad` starts it
+again at your next login. Use `./stop.sh`, which also runs `launchctl disable` and
+persists; `./restart.sh` and `./install.sh` re-enable the label automatically.
+
+## I installed with `--port N` and the scripts act like it's on 4400
+
+Fixed on this branch — the installer stamps the chosen port into the installed
+`start.sh`/`stop.sh`/`restart.sh`. If you see it, you are running an older install: re-run
+`./install.sh --port N`. Note `uninstall.sh` still defaults to 4400/4401, so pass
+`--port N --chat-port M` when removing a non-default install, or it will kill whatever you
+have on the defaults instead.
+
 ## The service keeps restarting / burns CPU
 
 `launchd` KeepAlive relaunches the server on every exit. Find the crash first:
@@ -55,6 +70,13 @@ directory it doesn't own.
 The path it derived contains `//` (commonly a `$TMPDIR`- or env-derived HOME with a
 trailing slash). Pass the directory explicitly without the double slash:
 `./uninstall.sh --console-dir "$HOME/Library/Application Support/AlbertConsole"`.
+
+## `restart.sh` says "FAILED to come up" but the console works
+
+You are on an older install: `restart.sh` used to call `die` from inside a command
+substitution, so a missing `lsof` killed only the subshell and the healthy restart got
+reported as a failure. Re-run `./install.sh` to pick up the fixed scripts. If `lsof` really
+is missing (`command -v lsof`), the script now says so directly instead.
 
 ## `chat/setup.sh`: "Python 3.12 not found"
 

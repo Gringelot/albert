@@ -78,9 +78,18 @@ Or use the scripts installed with the console (equivalent, plus port cleanup):
 ```sh
 cd ~/Library/Application\ Support/AlbertConsole
 ./restart.sh      # after editing server.mjs/lib/public — kills the old listener first
-./stop.sh         # stop for good: silences launchd, kills supervisor and port owner
+./stop.sh         # stop for good: boots out AND disables the agent, kills supervisor + port owner
 ./start.sh        # foreground run (when the service is stopped or was never installed)
 ```
+
+`stop.sh` *disables* the launchd label, not just unloads it — otherwise `RunAtLoad` brings
+the console back at your next login. `restart.sh` and `install.sh` re-enable it, so a stop
+survives reboots and a restart just works. There is no separate re-enable step to remember.
+
+The installer stamps `--port` into the copied `start.sh`/`stop.sh`/`restart.sh`, so a
+non-default port works end to end. One asymmetry to know: `uninstall.sh` defaults to
+4400/4401 and kills whatever *you* have listening there, so pass the same `--port N` when
+uninstalling a non-default install.
 
 The service definition pins the absolute node path found at install time
 (`ALBERT_NODE_PATH` in the plist), so a minimal launchd PATH cannot break it. If you
