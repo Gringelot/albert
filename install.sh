@@ -135,6 +135,9 @@ install_agents() {
 register_service() {
   store_path=$CLAUDE_DIR/agent-runs
   agents_path=$CLAUDE_DIR/agents
+  # --projects is the Claude Code transcripts root the session tailer reads, NOT the
+  # code-projects context dir ($PROJECTS_DIR only parameterizes harness prompts).
+  transcripts_path=$CLAUDE_DIR/projects
   runner_path=$CONSOLE_DIR/run-hidden.sh
   case "$OS_NAME" in
     Darwin)
@@ -143,7 +146,7 @@ register_service() {
       mkdir -p "$(dirname "$service_file")"
       uid=$(id -u)
       launchctl bootout "gui/$uid/$LAUNCHD_LABEL" >/dev/null 2>&1 || :
-      "$NODE_PATH" "$REPO/tools/render-unix-install.mjs" launchd "$service_file" "$LAUNCHD_LABEL" "$NODE_PATH" "$runner_path" "$PORT" "$store_path" "$PROJECTS_DIR" "$agents_path" "$CONSOLE_DIR" "$CONSOLE_DIR/albert-console.log" "$CONSOLE_DIR/albert-console-error.log"
+      "$NODE_PATH" "$REPO/tools/render-unix-install.mjs" launchd "$service_file" "$LAUNCHD_LABEL" "$NODE_PATH" "$runner_path" "$PORT" "$store_path" "$transcripts_path" "$agents_path" "$CONSOLE_DIR" "$CONSOLE_DIR/albert-console.log" "$CONSOLE_DIR/albert-console-error.log"
       chmod 600 "$service_file"
       launchctl bootstrap "gui/$uid" "$service_file"
       launchctl kickstart -k "gui/$uid/$LAUNCHD_LABEL"
@@ -152,7 +155,7 @@ register_service() {
     Linux)
       command -v systemctl >/dev/null 2>&1 || die "systemctl is unavailable. Re-run with --no-task to install without a service."
       service_file=$XDG_CONFIG_HOME/systemd/user/$SYSTEMD_UNIT
-      "$NODE_PATH" "$REPO/tools/render-unix-install.mjs" systemd "$service_file" "$NODE_PATH" "$runner_path" "$PORT" "$store_path" "$PROJECTS_DIR" "$agents_path" "$CONSOLE_DIR"
+      "$NODE_PATH" "$REPO/tools/render-unix-install.mjs" systemd "$service_file" "$NODE_PATH" "$runner_path" "$PORT" "$store_path" "$transcripts_path" "$agents_path" "$CONSOLE_DIR"
       systemctl --user daemon-reload
       systemctl --user enable "$SYSTEMD_UNIT"
       systemctl --user restart "$SYSTEMD_UNIT"
