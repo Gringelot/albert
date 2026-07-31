@@ -93,12 +93,17 @@ remove_service() {
 stop_supervisor() {
   supervisor=$1
   [ -f "$supervisor" ] || return 0
-  for pid in $(pgrep -f "$supervisor" 2>/dev/null || :); do
-    owner=$(ps -o user= -p "$pid" 2>/dev/null | tr -d ' ')
-    if [ "$owner" = "$USER_NAME" ]; then
-      kill "$pid" 2>/dev/null || :
-      ok "stopped supervisor process $pid"
-    fi
+  # Literal substring match, not pgrep -f: pgrep treats its pattern as a regular
+  # expression, so a console path containing regex metacharacters (--console-dir
+  # '/tmp/x.*') would match and kill unrelated processes of this user.
+  ps -Ao pid=,user=,command= 2>/dev/null | while read -r pid owner command; do
+    [ "$owner" = "$USER_NAME" ] || continue
+    case "$command" in
+      *"$supervisor"*)
+        kill "$pid" 2>/dev/null || :
+        ok "stopped supervisor process $pid"
+        ;;
+    esac
   done
 }
 # Stops only a listener owned by this user, never an arbitrary port owner.
@@ -158,10 +163,13 @@ done
 
 validate_port "$PORT"
 validate_port "$CHAT_PORT"
-validate_path "$CLAUDE_DIR"
-validate_path "$CONSOLE_DIR"
+# Absolutize BEFORE validating, so a control character contributed by the invoking
+# directory cannot slip into a removal target. See the same ordering in install.sh.
 CLAUDE_DIR=$(absolute_path "$CLAUDE_DIR")
 CONSOLE_DIR=$(absolute_path "$CONSOLE_DIR")
+validate_path "$CLAUDE_DIR"
+validate_path "$CONSOLE_DIR"
+validate_path "$XDG_CONFIG_HOME"
 validate_console_dir "$CONSOLE_DIR"
 verify_console_ownership
 printf '\nRemoving Albert\n'
@@ -177,6 +185,10 @@ stop_supervisor "$REPO/chat/run-forever.sh"
 stop_listener "$PORT"
 stop_listener "$CHAT_PORT"
 if [ -e "$CONSOLE_DIR" ]; then
+  # Re-check ownership immediately before the recursive removal: the earlier check ran
+  # before the service stop and two listener kills, leaving a window in which the
+  # verified directory could be swapped for another.
+  verify_console_ownership
   rm -rf "$CONSOLE_DIR"
   ok "removed console at $CONSOLE_DIR"
 else
