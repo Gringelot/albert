@@ -25,7 +25,11 @@ case "$(uname -s)" in
   Darwin)
     uid=$(id -u)
     launchctl bootout "gui/$uid/$LAUNCHD_LABEL" >/dev/null 2>&1 || :
-    info "launchd agent stopped"
+    # bootout only unloads from the running domain; the plist stays in ~/Library/
+    # LaunchAgents and RunAtLoad brings it back at the next login. disable persists,
+    # matching what stop.cmd (Disable-ScheduledTask) and the systemd branch do.
+    launchctl disable "gui/$uid/$LAUNCHD_LABEL" >/dev/null 2>&1 || :
+    info "launchd agent stopped and disabled (restart.sh or install.sh re-enables it)"
     ;;
   Linux)
     systemctl --user disable --now "$SYSTEMD_UNIT" >/dev/null 2>&1 || :
@@ -45,7 +49,7 @@ ps -Ao pid=,user=,command= 2>/dev/null | while read -r pid owner command; do
 done
 
 if pid=$(listener_pid); then
-  kill "$pid"
+  kill "$pid" 2>/dev/null || :
   info "server stopped"
 else
   info "server was not running"

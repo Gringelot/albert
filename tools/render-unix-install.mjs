@@ -111,7 +111,13 @@ if (command === 'template') {
   const [destinationFile, nodePath, runnerPath, port, storePath, projectsPath, agentsPath, workingDirectory] = args;
   if (args.length !== 8) fail('usage: systemd <file> <node> <runner> <port> <store> <projects> <agents> <cwd>');
   const execStart = ['/bin/sh', runnerPath, '--port', port, '--store', storePath, '--projects', projectsPath, '--agents', agentsPath].map(systemd).join(' ');
-  writeText(destinationFile, `[Unit]\nDescription=Albert Console\n\n[Service]\nType=simple\nWorkingDirectory=${systemd(workingDirectory)}\nEnvironment=${systemd(`ALBERT_NODE_PATH=${nodePath}`)}\nExecStart=${execStart}\nRestart=always\nRestartSec=5\n\n[Install]\nWantedBy=default.target\n`);
+  // WorkingDirectory= is a path-typed setting parsed by config_parse_working_directory,
+  // which does NOT unquote. A quoted value is read as a non-absolute path and the unit
+  // fails to load ("Exec format error"), aborting every Linux install. ExecStart= and
+  // Environment= are EXTRACT_UNQUOTE-parsed, so they keep the quoting. Only % needs
+  // escaping here, since specifier expansion runs before quote handling.
+  const workingDirectoryValue = assertNoControlChars(workingDirectory, 'systemd unit value').replaceAll('%', '%%');
+  writeText(destinationFile, `[Unit]\nDescription=Albert Console\n\n[Service]\nType=simple\nWorkingDirectory=${workingDirectoryValue}\nEnvironment=${systemd(`ALBERT_NODE_PATH=${nodePath}`)}\nExecStart=${execStart}\nRestart=always\nRestartSec=5\n\n[Install]\nWantedBy=default.target\n`);
 } else {
   fail('usage: template|launchd|systemd ...');
 }

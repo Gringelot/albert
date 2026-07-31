@@ -30,7 +30,7 @@ ps -Ao pid=,user=,command= 2>/dev/null | while read -r pid owner command; do
 done
 
 if pid=$(listener_pid); then
-  kill "$pid"
+  kill "$pid" 2>/dev/null || :
   info "chat stopped"
 else
   info "chat was not running"
