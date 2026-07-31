@@ -40,9 +40,9 @@ option_value() {
 # Confirms Node is available, supported, and addressable by an absolute path.
 require_node() {
   command -v node >/dev/null 2>&1 || die "Node.js is not on PATH. Install Node $NODE_MIN_MAJOR+ and re-run."
-  NODE_PATH=$(command -v node)
-  case "$NODE_PATH" in /*) ;; *) die "Node.js must resolve to an absolute path." ;; esac
-  NODE_VERSION=$($NODE_PATH --version)
+  ALBERT_NODE=$(command -v node)
+  case "$ALBERT_NODE" in /*) ;; *) die "Node.js must resolve to an absolute path." ;; esac
+  NODE_VERSION=$("$ALBERT_NODE" --version)
   NODE_MAJOR=${NODE_VERSION#v}
   NODE_MAJOR=${NODE_MAJOR%%.*}
   case "$NODE_MAJOR" in ''|*[!0-9]*) die "Could not determine the Node.js version." ;; esac
@@ -100,7 +100,7 @@ install_template() {
   source_file=$1
   destination_file=$2
   template_kind=$3
-  "$NODE_PATH" "$REPO/tools/render-unix-install.mjs" template "$source_file" "$destination_file" "$CLAUDE_DIR" "$PROJECTS_DIR" "$CONSOLE_DIR" "$template_kind"
+  "$ALBERT_NODE" "$REPO/tools/render-unix-install.mjs" template "$source_file" "$destination_file" "$CLAUDE_DIR" "$PROJECTS_DIR" "$CONSOLE_DIR" "$template_kind"
 }
 # Copies the console tree while preserving its relative layout.
 install_console() {
@@ -113,6 +113,14 @@ install_console() {
     mkdir -p "$(dirname "$destination_file")"
     cp "$source_file" "$destination_file"
   ' sh {} "$REPO/console" "$CONSOLE_DIR" \;
+  # The lifecycle scripts hardcode the default port; stamp the installed port in, or a
+  # --port install leaves start/stop/restart operating on 4400 while the service serves
+  # another port (restart.sh then reports a failure for a healthy console).
+  for script in start.sh stop.sh restart.sh; do
+    target=$CONSOLE_DIR/$script
+    [ -f "$target" ] || continue
+    sed "s/^PORT=$DEFAULT_PORT\$/PORT=$PORT/" "$target" >"$target.new" && mv "$target.new" "$target"
+  done
   find "$CONSOLE_DIR" -type f -name '*.sh' -exec chmod 700 {} \;
 }
 # Installs all loop agents and only missing generic helper agents.
@@ -146,8 +154,10 @@ register_service() {
       mkdir -p "$(dirname "$service_file")"
       uid=$(id -u)
       launchctl bootout "gui/$uid/$LAUNCHD_LABEL" >/dev/null 2>&1 || :
-      "$NODE_PATH" "$REPO/tools/render-unix-install.mjs" launchd "$service_file" "$LAUNCHD_LABEL" "$NODE_PATH" "$runner_path" "$PORT" "$store_path" "$transcripts_path" "$agents_path" "$CONSOLE_DIR" "$CONSOLE_DIR/albert-console.log" "$CONSOLE_DIR/albert-console-error.log"
+      "$ALBERT_NODE" "$REPO/tools/render-unix-install.mjs" launchd "$service_file" "$LAUNCHD_LABEL" "$ALBERT_NODE" "$runner_path" "$PORT" "$store_path" "$transcripts_path" "$agents_path" "$CONSOLE_DIR" "$CONSOLE_DIR/albert-console.log" "$CONSOLE_DIR/albert-console-error.log"
       chmod 600 "$service_file"
+      # A label previously disabled by console/stop.sh would stay inert through bootstrap.
+      launchctl enable "gui/$uid/$LAUNCHD_LABEL" >/dev/null 2>&1 || :
       launchctl bootstrap "gui/$uid" "$service_file"
       launchctl kickstart -k "gui/$uid/$LAUNCHD_LABEL"
       ok "registered launchd agent $LAUNCHD_LABEL -> http://localhost:$PORT"
@@ -155,7 +165,7 @@ register_service() {
     Linux)
       command -v systemctl >/dev/null 2>&1 || die "systemctl is unavailable. Re-run with --no-task to install without a service."
       service_file=$XDG_CONFIG_HOME/systemd/user/$SYSTEMD_UNIT
-      "$NODE_PATH" "$REPO/tools/render-unix-install.mjs" systemd "$service_file" "$NODE_PATH" "$runner_path" "$PORT" "$store_path" "$transcripts_path" "$agents_path" "$CONSOLE_DIR"
+      "$ALBERT_NODE" "$REPO/tools/render-unix-install.mjs" systemd "$service_file" "$ALBERT_NODE" "$runner_path" "$PORT" "$store_path" "$transcripts_path" "$agents_path" "$CONSOLE_DIR"
       systemctl --user daemon-reload
       systemctl --user enable "$SYSTEMD_UNIT"
       systemctl --user restart "$SYSTEMD_UNIT"
@@ -168,7 +178,7 @@ register_service() {
 run_demo() {
   demo_dir=$REPO/tools/demo-out
   info "Generating synthetic demo data"
-  "$NODE_PATH" "$REPO/tools/make-demo-data.mjs" "$demo_dir"
+  "$ALBERT_NODE" "$REPO/tools/make-demo-data.mjs" "$demo_dir"
   ok "demo data at $demo_dir"
   case "$OS_NAME" in
     Darwin) opener=open ;;
@@ -181,7 +191,7 @@ run_demo() {
     warn "no browser opener found, open http://localhost:$PORT yourself"
   fi
   info "Starting the console at http://localhost:$PORT (Ctrl+C to stop)"
-  exec "$NODE_PATH" "$REPO/console/server.mjs" --port "$PORT" --store "$demo_dir/agent-runs" --projects "$demo_dir/projects" --agents "$REPO/harness/agents"
+  exec "$ALBERT_NODE" "$REPO/console/server.mjs" --port "$PORT" --store "$demo_dir/agent-runs" --projects "$demo_dir/projects" --agents "$REPO/harness/agents"
 }
 
 : "${HOME:?HOME is required}"
@@ -264,7 +274,7 @@ if [ "$NO_CONSOLE" = false ]; then
   if [ "$NO_TASK" = false ]; then
     register_service
   else
-    info "console service not registered (--no-task). Start it manually with: $NODE_PATH $CONSOLE_DIR/server.mjs"
+    info "console service not registered (--no-task). Start it manually with: '$CONSOLE_DIR/start.sh'"
   fi
 fi
 
