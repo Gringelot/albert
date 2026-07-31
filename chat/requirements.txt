@@ -1,2 +1,6 @@
-chainlit>=2.11
-claude-agent-sdk>=0.2
+# Pinned to the versions this chat was built and tested against (see chat/README.md).
+# pip runs each package's build backend as your user, and this venv hosts a concierge that
+# can queue steering messages and launch runs, so an open upper bound hands that access to
+# an untested tree. Bump deliberately, then re-test.
+chainlit==2.11.1
+claude-agent-sdk==0.2.126
