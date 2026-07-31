@@ -30,6 +30,9 @@ Thanks for your interest. A few ground rules keep this project simple, private, 
 - If you changed an agent, the skill, or a template token, run
   `install.ps1 -ClaudeDir <scratch> -NoConsole` into a throwaway folder and confirm every
   `{{TOKEN}}` resolved and nothing personal leaked in.
+- On macOS/Linux, run `sh tools/test-unix.sh` — an isolated smoke suite (throwaway HOME,
+  stubbed launchctl/osascript, test port) covering installers, renderer output, run-store
+  helpers, the live console, and supervisors. It must end `0 failed`.
 - Never commit a `*.local.json`, a `.credentials.json`, an `.env`, or any real path from
   your own machine. `.gitignore` guards the common cases; you are still responsible.
 
