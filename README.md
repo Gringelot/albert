@@ -151,6 +151,10 @@ For example, to install only the harness into a non-default Claude Code director
 ./install.sh --claude-dir /path/to/.claude --no-console
 ```
 
+macOS deep-dives: [usage](docs/macos/USAGE.md) ·
+[troubleshooting](docs/macos/TROUBLESHOOTING.md) ·
+[test strategy, results, and a tiered self-test plan](docs/macos/TESTING.md).
+
 Linux puts the Console under `${XDG_DATA_HOME:-$HOME/.local/share}/albert-console`
 and installs the user service under `${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/albert-console.service`.
 
