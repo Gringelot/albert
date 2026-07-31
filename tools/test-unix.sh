@@ -1,12 +1,17 @@
 #!/bin/sh
 # Isolated smoke suite for the Unix (macOS/Linux) port.
 #
-# Safe by construction: every stateful check runs against a throwaway HOME under
-# mktemp, with launchctl/osascript/claude/open shadowed by PATH stubs, so it never
-# touches the real ~/.claude, never registers a real service, and never opens an
-# app or browser. The console boots on a test port (default 4499) and is killed
-# on exit. Implements the verification list in
+# Safe by construction: every stateful check runs via sandboxed() against a throwaway
+# HOME and XDG roots under mktemp, with launchctl/systemctl/osascript/claude/open/
+# xdg-open shadowed by PATH stubs, so it never touches the real ~/.claude, never
+# registers or removes a real service, and never opens an app or browser. Servers use
+# test ports (default 4499/4500) and are killed on exit; the uninstaller is always given
+# those ports, since it kills whatever this user has listening on the ports it is told.
+# Section 10 proves the real system is unchanged. Implements the verification list in
 # docs/superpowers/specs/2026-07-28-unix-parity-design.md.
+#
+# One residual, unavoidable overlap: uninstall.sh stops a chat supervisor launched from
+# THIS repo checkout, so section 9 is skipped while one is running.
 #
 # Usage: sh tools/test-unix.sh          (from anywhere; paths are repo-relative)
 # Exit:  0 all checks passed, 1 otherwise.
@@ -14,6 +19,16 @@ set -u
 
 REPO=$(CDPATH= cd "$(dirname "$0")/.." && pwd -P)
 TEST_PORT=${ALBERT_TEST_PORT:-4499}
+TEST_CHAT_PORT=$((TEST_PORT + 1))
+
+# Snapshotted before anything runs, then compared at the end. Asserting these are ABSENT
+# would fail for the very people most likely to run this suite: anyone with Albert really
+# installed. What matters is that the suite changed nothing.
+real_state() { if [ -e "$1" ]; then printf 'present'; else printf 'absent'; fi; }
+REAL_CLAUDE_SKILL=$HOME/.claude/skills/albert
+REAL_PLIST=$HOME/Library/LaunchAgents/com.sdraugel.albert.console.plist
+PRE_SKILL_STATE=$(real_state "$REAL_CLAUDE_SKILL")
+PRE_PLIST_STATE=$(real_state "$REAL_PLIST")
 PASS=0
 FAIL=0
 SERVER_PID=
@@ -81,18 +96,40 @@ cat >"$STUB_BIN/open" <<EOF
 printf 'open %s\n' "\$*" >>"$STUB_LOG"
 exit 0
 EOF
+# Without this stub the Linux branch of install.sh/uninstall.sh would reach the real
+# systemctl --user and enable, restart, or DELETE the invoking user's genuine
+# albert-console.service.
+cat >"$STUB_BIN/systemctl" <<EOF
+#!/bin/sh
+printf 'systemctl %s\n' "\$*" >>"$STUB_LOG"
+exit 0
+EOF
+cat >"$STUB_BIN/xdg-open" <<EOF
+#!/bin/sh
+printf 'xdg-open %s\n' "\$*" >>"$STUB_LOG"
+exit 0
+EOF
 chmod 700 "$STUB_BIN"/*
 SAFE_PATH=$STUB_BIN:$PATH
 
+# Every stateful invocation goes through this: HOME, PATH and the XDG roots all point
+# inside the throwaway tree. env alone would let an inherited XDG_CONFIG_HOME send the
+# installer's systemd writes (and the uninstaller's rm -f) to the user's real config.
+sandboxed() {
+  env HOME="$FAKE_HOME" PATH="$SAFE_PATH" \
+      XDG_CONFIG_HOME="$FAKE_HOME/.config" XDG_DATA_HOME="$FAKE_HOME/.local/share" "$@"
+}
+
 say ''
 say '== 1. Static checks =='
-for f in install.sh uninstall.sh console/*.sh chat/*.sh; do
-  check "sh -n $f" sh -n "$REPO/$f"
+# Globs are anchored to $REPO, not the caller's cwd, so the suite really does run from
+# anywhere as its usage line claims.
+for f in "$REPO"/install.sh "$REPO"/uninstall.sh "$REPO"/console/*.sh "$REPO"/chat/*.sh; do
+  check "sh -n ${f#"$REPO"/}" sh -n "$f"
 done
-for f in tools/render-unix-install.mjs tools/make-demo-data.mjs console/server.mjs \
-         console/lib/*.mjs harness/runtime/_emit.mjs harness/runtime/_inbox.mjs \
-         harness/workflows/chunk-exec.js; do
-  check "node --check $f" node --check "$REPO/$f"
+for f in "$REPO"/tools/*.mjs "$REPO"/console/server.mjs "$REPO"/console/lib/*.mjs \
+         "$REPO"/harness/runtime/*.mjs "$REPO"/harness/workflows/chunk-exec.js; do
+  check "node --check ${f#"$REPO"/}" node --check "$f"
 done
 if command -v python3 >/dev/null 2>&1; then
   for f in "$REPO"/chat/*.py; do
@@ -132,7 +169,7 @@ check 'rendered workflow still parses' node --check "$RENDER_OUT/chunk-exec.js"
 
 say ''
 say '== 3. Installer in isolated HOME (stubbed launchctl, no real services) =='
-check 'install.sh full install' env HOME="$FAKE_HOME" PATH="$SAFE_PATH" sh "$REPO/install.sh"
+check 'install.sh full install' sandboxed sh "$REPO/install.sh"
 CLAUDE_DIR=$FAKE_HOME/.claude
 case "$(uname -s)" in
   Darwin) CONSOLE_DIR="$FAKE_HOME/Library/Application Support/AlbertConsole" ;;
@@ -177,13 +214,13 @@ fi
 
 say ''
 say '== 4. Installer validation rejections =='
-check 'second install is idempotent' env HOME="$FAKE_HOME" PATH="$SAFE_PATH" sh "$REPO/install.sh" --no-task
-check_fails 'rejects invalid port' env HOME="$FAKE_HOME" PATH="$SAFE_PATH" sh "$REPO/install.sh" --port 99999 --no-task
-check_fails 'rejects port with junk' env HOME="$FAKE_HOME" PATH="$SAFE_PATH" sh "$REPO/install.sh" --port 44x --no-task
+check 'second install is idempotent' sandboxed sh "$REPO/install.sh" --no-task
+check_fails 'rejects invalid port' sandboxed sh "$REPO/install.sh" --port 99999 --no-task
+check_fails 'rejects port with junk' sandboxed sh "$REPO/install.sh" --port 44x --no-task
 mkdir -p "$TMPROOT/dirty" && touch "$TMPROOT/dirty/keep.txt"
-check_fails 'rejects non-empty unowned console dir' env HOME="$FAKE_HOME" PATH="$SAFE_PATH" sh "$REPO/install.sh" --console-dir "$TMPROOT/dirty" --no-task
-check_fails 'rejects root as console dir' env HOME="$FAKE_HOME" PATH="$SAFE_PATH" sh "$REPO/install.sh" --console-dir / --no-task
-check_fails 'rejects console dir with dot-dot' env HOME="$FAKE_HOME" PATH="$SAFE_PATH" sh "$REPO/install.sh" --console-dir "$TMPROOT/a/../b" --no-task
+check_fails 'rejects non-empty unowned console dir' sandboxed sh "$REPO/install.sh" --console-dir "$TMPROOT/dirty" --no-task
+check_fails 'rejects root as console dir' sandboxed sh "$REPO/install.sh" --console-dir / --no-task
+check_fails 'rejects console dir with dot-dot' sandboxed sh "$REPO/install.sh" --console-dir "$TMPROOT/a/../b" --no-task
 check 'dirty dir untouched by rejection' test -f "$TMPROOT/dirty/keep.txt"
 
 say ''
@@ -193,18 +230,18 @@ RUN=smoke-test-2026-07-31
 mkdir -p "$STORE/$RUN"
 printf '{"active_run_id":"%s","runs":[{"id":"%s","project_path":"%s","status":"running"}]}\n' \
   "$RUN" "$RUN" "$TMPROOT" >"$STORE/index.json"
-check 'emit appends an event' env HOME="$FAKE_HOME" node "$STORE/_emit.mjs" "$RUN" task.picked controller T1 'smoke emit' --iter 1
+check 'emit appends an event' sandboxed node "$STORE/_emit.mjs" "$RUN" task.picked controller T1 'smoke emit' --iter 1
 check 'events.jsonl exists' test -f "$STORE/$RUN/events.jsonl"
-check 'emitted event is valid JSON with type' env HOME="$FAKE_HOME" node -e "
+check 'emitted event is valid JSON with type' sandboxed node -e "
   const l=require('fs').readFileSync('$STORE/$RUN/events.jsonl','utf8').trim().split('\n')[0];
   const e=JSON.parse(l);
   if (e.type!=='task.picked'||e.actor!=='controller') process.exit(1);"
-check 'inbox write queues a message' env HOME="$FAKE_HOME" node "$STORE/_inbox.mjs" write "$RUN" --type info --text 'smoke message'
+check 'inbox write queues a message' sandboxed node "$STORE/_inbox.mjs" write "$RUN" --type info --text 'smoke message'
 MSG_FILE=$(ls "$STORE/$RUN/inbox/"*.json 2>/dev/null | head -1)
 if [ -n "$MSG_FILE" ]; then ok 'inbox message file created'; else bad 'inbox message file missing'; fi
-check 'inbox list shows the message' env HOME="$FAKE_HOME" node "$STORE/_inbox.mjs" list "$RUN"
+check 'inbox list shows the message' sandboxed node "$STORE/_inbox.mjs" list "$RUN"
 if [ -n "$MSG_FILE" ]; then
-  check 'inbox reply archives the message' env HOME="$FAKE_HOME" node "$STORE/_inbox.mjs" reply "$RUN" "$(basename "$MSG_FILE")" --text 'smoke reply'
+  check 'inbox reply archives the message' sandboxed node "$STORE/_inbox.mjs" reply "$RUN" "$(basename "$MSG_FILE")" --text 'smoke reply'
   check 'message moved to processed' test -f "$STORE/$RUN/inbox/processed/$(basename "$MSG_FILE")"
   check_grep 'chat.msg event recorded' 'chat.msg' "$STORE/$RUN/events.jsonl"
   check_grep 'chat.reply event recorded' 'chat.reply' "$STORE/$RUN/events.jsonl"
@@ -213,8 +250,20 @@ fi
 say ''
 say '== 6. Demo data + live console on 127.0.0.1:'"$TEST_PORT"' =='
 DEMO=$TMPROOT/demo
+# Refuse to share the port: an already-listening server would answer every check below
+# while our own exits on EADDRINUSE, turning a broken run into a green one.
+if lsof -nP -tiTCP:"$TEST_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+  bad "port $TEST_PORT is already in use; free it or set ALBERT_TEST_PORT"
+  say "=== $PASS passed, $FAIL failed ==="
+  exit 1
+fi
 check 'demo data generates' node "$REPO/tools/make-demo-data.mjs" "$DEMO"
-env HOME="$FAKE_HOME" PATH="$SAFE_PATH" node "$REPO/console/server.mjs" --port "$TEST_PORT" \
+# Backgrounded through env directly, not sandboxed(): a shell function backgrounds into a
+# subshell, so $! would be the subshell and node would survive the kill, leaving the test
+# port held. env exec's node in place, so $! really is the server.
+env HOME="$FAKE_HOME" PATH="$SAFE_PATH" XDG_CONFIG_HOME="$FAKE_HOME/.config" \
+  XDG_DATA_HOME="$FAKE_HOME/.local/share" \
+  node "$REPO/console/server.mjs" --port "$TEST_PORT" \
   --store "$DEMO/agent-runs" --projects "$DEMO/projects" --agents "$REPO/harness/agents" \
   >"$TMPROOT/server.log" 2>&1 &
 SERVER_PID=$!
@@ -244,19 +293,19 @@ ok 'server stopped'
 
 say ''
 say '== 7. Chat launcher (stubbed osascript/claude, nothing real opens) =='
-check_fails 'launch_run rejects missing project dir' env PATH="$SAFE_PATH" sh "$REPO/chat/launch_run.sh" "$TMPROOT/nope" 'x'
-check_fails 'launch_run rejects double-quoted prompt' env PATH="$SAFE_PATH" sh "$REPO/chat/launch_run.sh" "$TMPROOT" 'bad " prompt'
-check_fails 'launch_run wants exactly 2 args' env PATH="$SAFE_PATH" sh "$REPO/chat/launch_run.sh" "$TMPROOT"
+check_fails 'launch_run rejects missing project dir' sandboxed sh "$REPO/chat/launch_run.sh" "$TMPROOT/nope" 'x'
+check_fails 'launch_run rejects double-quoted prompt' sandboxed sh "$REPO/chat/launch_run.sh" "$TMPROOT" 'bad " prompt'
+check_fails 'launch_run wants exactly 2 args' sandboxed sh "$REPO/chat/launch_run.sh" "$TMPROOT"
 if [ "$(uname -s)" = Darwin ]; then
   : >"$STUB_LOG"
-  check 'launch_run happy path (stubbed)' env PATH="$SAFE_PATH" sh "$REPO/chat/launch_run.sh" "$TMPROOT" '/loop /albert smoke goal'
+  check 'launch_run happy path (stubbed)' sandboxed sh "$REPO/chat/launch_run.sh" "$TMPROOT" '/loop /albert smoke goal'
   check_grep 'osascript received the project path' "$TMPROOT" "$STUB_LOG"
   check_grep 'osascript received the prompt' '/loop /albert smoke goal' "$STUB_LOG"
 fi
 if command -v python3.12 >/dev/null 2>&1; then
   say '  skip setup.sh missing-python test: python3.12 present on this box'
 else
-  check_fails 'chat setup.sh fails clearly without python3.12' sh "$REPO/chat/setup.sh"
+  check_fails 'chat setup.sh fails clearly without python3.12' sandboxed sh "$REPO/chat/setup.sh"
 fi
 
 say ''
@@ -273,10 +322,23 @@ fi
 
 say ''
 say '== 9. Uninstaller in isolated HOME =='
+# uninstall.sh matches supervisors by this repo's own path, which a real running chat
+# supervisor would share. Skip rather than stop the user's live service.
+supervisor_running=false
+ps -Ao command= >"$TMPROOT/ps.txt" 2>/dev/null || :
+# Matched with case, not grep: a grep for this path would find its own command line.
+while read -r running_command; do
+  case "$running_command" in *"$REPO/chat/run-forever.sh"*) supervisor_running=true ;; esac
+done <"$TMPROOT/ps.txt"
+if [ "$supervisor_running" = true ]; then
+  say "  SKIP section 9: a chat supervisor from $REPO is running; stop it to test uninstall"
+else
 mkdir -p "$TMPROOT/dirty2" && touch "$TMPROOT/dirty2/keep.txt"
-check_fails 'uninstall refuses unowned console dir' env HOME="$FAKE_HOME" PATH="$SAFE_PATH" sh "$REPO/uninstall.sh" --console-dir "$TMPROOT/dirty2"
+check_fails 'uninstall refuses unowned console dir' sandboxed sh "$REPO/uninstall.sh" --console-dir "$TMPROOT/dirty2" --port "$TEST_PORT" --chat-port "$TEST_CHAT_PORT"
 check 'unowned dir survives refusal' test -f "$TMPROOT/dirty2/keep.txt"
-check 'uninstall.sh full removal' env HOME="$FAKE_HOME" PATH="$SAFE_PATH" sh "$REPO/uninstall.sh"
+# Test ports, always: uninstall.sh kills whatever this user has listening on the ports it
+# is given, so the defaults would take down a real console (4400) or chat (4401).
+check 'uninstall.sh full removal' sandboxed sh "$REPO/uninstall.sh" --port "$TEST_PORT" --chat-port "$TEST_CHAT_PORT"
 check_fails 'skill removed' test -e "$CLAUDE_DIR/skills/albert"
 check_fails 'workflow removed' test -e "$CLAUDE_DIR/workflows/chunk-exec.js"
 check_fails 'emit helper removed' test -e "$CLAUDE_DIR/agent-runs/_emit.mjs"
@@ -288,12 +350,20 @@ if [ "$(uname -s)" = Darwin ]; then
   check_fails 'launchd plist removed' test -e "$PLIST"
   check_grep 'stubbed launchctl booted out service' 'launchctl bootout' "$STUB_LOG"
 fi
+fi
 
 say ''
-say '== 10. No residue on the real system =='
-REAL_CLAUDE=${REAL_HOME:-$HOME}/.claude
-check_fails 'real ~/.claude has no albert skill' test -e "$REAL_CLAUDE/skills/albert"
-check_fails 'real LaunchAgents has no albert plist' test -e "${REAL_HOME:-$HOME}/Library/LaunchAgents/com.sdraugel.albert.console.plist"
+say '== 10. Real system unchanged =='
+if [ "$(real_state "$REAL_CLAUDE_SKILL")" = "$PRE_SKILL_STATE" ]; then
+  ok "real ~/.claude/skills/albert unchanged ($PRE_SKILL_STATE before and after)"
+else
+  bad "real ~/.claude/skills/albert changed: was $PRE_SKILL_STATE, now $(real_state "$REAL_CLAUDE_SKILL")"
+fi
+if [ "$(real_state "$REAL_PLIST")" = "$PRE_PLIST_STATE" ]; then
+  ok "real launchd plist unchanged ($PRE_PLIST_STATE before and after)"
+else
+  bad "real launchd plist changed: was $PRE_PLIST_STATE, now $(real_state "$REAL_PLIST")"
+fi
 if lsof -nP -tiTCP:"$TEST_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
   bad "something still listens on $TEST_PORT"
 else
