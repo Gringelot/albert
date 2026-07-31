@@ -53,7 +53,11 @@ function renderWorkflow(source, claudeDir) {
 function renderMarkdown(source, claudeDir, projectsDir, consoleDir) {
   const runStore = join(claudeDir, 'agent-runs');
   const bootstrapScript = join(runStore, '<run-id>', 'init.sh');
+  const bootstrapPattern = join(runStore, '*', 'init.sh');
   return source
+    // macOS ships no bare `python`, and Debian/Ubuntu need python-is-python3 for one.
+    // Without this the harness prompts on every python3 command, which stalls /loop runs.
+    .replaceAll('  - Bash(python *)', '  - Bash(python *)\n  - Bash(python3 *)')
     .replaceAll('{{CLAUDE_DIR}}\\agent-runs', runStore)
     .replaceAll('{{CLAUDE_DIR}}', claudeDir)
     .replaceAll('{{PROJECTS_DIR}}', projectsDir)
@@ -61,7 +65,17 @@ function renderMarkdown(source, claudeDir, projectsDir, consoleDir) {
     .replaceAll('\\', '/')
     .replaceAll('# init.ps1,', '# init.sh,')
     .replaceAll('init.ps1', 'project.json.bootstrap_command')
-    .replaceAll('Bash(powershell -File *)', 'Bash(sh *)')
+    // The Windows grant it replaces (`powershell -File <script>`) can only run a script
+    // already on disk. A blanket `Bash(sh *)` would additionally pre-approve
+    // `sh -c '<anything>'` with no prompt, which matters because this harness runs
+    // unattended over untrusted input (research output, repo contents, the chat inbox).
+    // Grant only the one sh command the harness actually issues: the run's init.sh.
+    // Both forms are listed because bootstrap_command records the path shell-quoted;
+    // permission rules are OR'd and matched per compound-command segment.
+    .replaceAll(
+      '  - Bash(powershell -File *)',
+      `  - Bash(sh ${bootstrapPattern})\n  - Bash(sh '${bootstrapPattern}')`,
+    )
     .replace(
       'Write `project.json.bootstrap_command` (idempotent env bootstrap for this project) and `progress.json`',
       `Write \`init.sh\` (idempotent env bootstrap for this project), record \`bootstrap_command: "sh ${shell(bootstrapScript)}"\` in \`project.json\` with this run's actual id, and write \`progress.json\`.`,
