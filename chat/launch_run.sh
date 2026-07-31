@@ -26,7 +26,7 @@ on run argv
   set promptText to item 2 of argv
   tell application "Terminal"
     activate
-    do script "cd " & quoted form of projectPath & " && exec claude " & quoted form of promptText
+    do script "cd " & quoted form of projectPath & " && exec claude -- " & quoted form of promptText
   end tell
 end run
 APPLESCRIPT
@@ -34,7 +34,12 @@ APPLESCRIPT
   Linux)
     command -v x-terminal-emulator >/dev/null 2>&1 || { printf '%s\n' 'x-terminal-emulator is required to launch a visible Albert run.' >&2; exit 1; }
     cd "$PROJECT"
-    exec x-terminal-emulator -e claude "$PROMPT"
+    # Detach rather than exec: the chat backend calls this with a 60s timeout, and a
+    # non-daemonizing emulator (xterm, alacritty, kitty) runs for the life of the session.
+    # Blocking would time out and kill the terminal, destroying the run it just started.
+    # The macOS branch already returns immediately because osascript does.
+    setsid x-terminal-emulator -e claude -- "$PROMPT" >/dev/null 2>&1 &
+    exit 0
     ;;
   *) printf 'unsupported OS: %s\n' "$(uname -s)" >&2; exit 1 ;;
 esac

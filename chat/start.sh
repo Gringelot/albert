@@ -19,4 +19,8 @@ fi
 # Served through server.py, NOT `chainlit run`: it adds the Origin guard that stops
 # any page you happen to be browsing from hijacking the chat's WebSocket. See server.py.
 cd "$HERE"
-exec "$PYTHON" -m uvicorn server:app --host 127.0.0.1 --port 4401 "$@"
+# "$@" goes BEFORE the bind flags: uvicorn's click parser lets the last occurrence win, so
+# a passed-through --host would otherwise override the loopback bind. server.py's Origin
+# guard deliberately allows requests with no Origin header, which is only safe while the
+# socket is loopback-only.
+exec "$PYTHON" -m uvicorn "$@" server:app --host 127.0.0.1 --port 4401
