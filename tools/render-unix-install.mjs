@@ -93,6 +93,35 @@ function renderMarkdown(source, claudeDir, projectsDir, consoleDir) {
     );
 }
 
+// The run-store README ships next to the rendered SKILL, so it must not keep telling agents
+// the bootstrap file is init.ps1 or that PowerShell quoting rules apply. A blanket markdown
+// render would corrupt its shell-quoting examples (backslash rewriting), so retarget the two
+// Windows-specific parts and leave the rest byte-identical.
+const POSIX_QUOTING_SECTION = `### Shell quoting for \`jsonData\`
+
+\`jsonData\` must reach node as literal JSON, quotes included. In a POSIX shell (sh, bash,
+zsh), wrap it in single quotes:
+
+\`\`\`sh
+node _emit.mjs my-run-2026-07-15 test.ping chief store "ping" '{"k":1}'
+\`\`\`
+
+Other arguments containing spaces (typically \`<summary>\`) only need normal quoting.
+
+`;
+
+function renderStoreReadme(source) {
+  const start = source.indexOf('### Shell quoting for `jsonData`');
+  const end = source.indexOf('## Chat inbox');
+  const rewritten = start !== -1 && end !== -1 && end > start
+    ? source.slice(0, start) + POSIX_QUOTING_SECTION + source.slice(end)
+    : source;
+  return rewritten.replaceAll(
+    '`init.ps1` - idempotent environment bootstrap for this project.',
+    '`init.sh` - idempotent environment bootstrap for this project (its path is recorded in `project.json.bootstrap_command`).',
+  );
+}
+
 const [command, ...args] = process.argv.slice(2);
 if (command === 'template') {
   const [sourceFile, destinationFile, claudeDir, projectsDir, consoleDir, kind] = args;
@@ -100,6 +129,7 @@ if (command === 'template') {
   const source = readFileSync(sourceFile, 'utf8');
   if (kind === 'markdown') writeText(destinationFile, renderMarkdown(source, claudeDir, projectsDir, consoleDir));
   else if (kind === 'workflow') writeText(destinationFile, renderWorkflow(source, claudeDir));
+  else if (kind === 'store-readme') writeText(destinationFile, renderStoreReadme(source));
   else fail(`unknown template kind: ${kind}`);
 } else if (command === 'launchd') {
   const [destinationFile, label, nodePath, runnerPath, port, storePath, projectsPath, agentsPath, workingDirectory, outLog, errorLog] = args;
