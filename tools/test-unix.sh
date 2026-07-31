@@ -144,6 +144,12 @@ check 'workflow installed' test -f "$CLAUDE_DIR/workflows/chunk-exec.js"
 check 'emit helper installed' test -f "$CLAUDE_DIR/agent-runs/_emit.mjs"
 check 'inbox helper installed' test -f "$CLAUDE_DIR/agent-runs/_inbox.mjs"
 check 'store README installed' test -f "$CLAUDE_DIR/agent-runs/README.md"
+# The installed store README sits next to the rendered SKILL; if it still names init.ps1 or
+# teaches PowerShell quoting, agents reading it get instructions that contradict the harness.
+check_absent 'store README has no init.ps1' 'init.ps1' "$CLAUDE_DIR/agent-runs/README.md"
+check_absent 'store README has no PowerShell guidance' 'PowerShell' "$CLAUDE_DIR/agent-runs/README.md"
+check_fails 'no inert Windows launchers installed' test -e "$CONSOLE_DIR/run-hidden.vbs"
+check_absent 'no unrendered token in installed console tree' '{{' "$CONSOLE_DIR/run-forever.sh"
 LOOP_AGENTS=0
 for a in loop-planner loop-worker loop-data-scientist loop-designer loop-researcher \
          loop-devops loop-verifier-dev loop-qa loop-skeptic-research loop-cleanup loop-scribe; do

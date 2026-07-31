@@ -104,7 +104,10 @@ install_template() {
 }
 # Copies the console tree while preserving its relative layout.
 install_console() {
-  find "$REPO/console" -type f -exec sh -c '
+  # Skip the Windows launchers: they are inert here, and run-hidden.vbs carries a
+  # {{CONSOLE_DIR}} token that only install.ps1 resolves, so copying it would leave an
+  # unrendered template in the installed tree.
+  find "$REPO/console" -type f ! -name '*.vbs' ! -name '*.cmd' -exec sh -c '
     source_file=$1
     source_root=$2
     destination_root=$3
@@ -264,7 +267,7 @@ ok "workflow: chunk-exec (parallel executor)"
 mkdir -p "$CLAUDE_DIR/agent-runs"
 cp "$REPO/harness/runtime/_emit.mjs" "$CLAUDE_DIR/agent-runs/_emit.mjs"
 cp "$REPO/harness/runtime/_inbox.mjs" "$CLAUDE_DIR/agent-runs/_inbox.mjs"
-cp "$REPO/harness/runtime/agent-runs-README.md" "$CLAUDE_DIR/agent-runs/README.md"
+install_template "$REPO/harness/runtime/agent-runs-README.md" "$CLAUDE_DIR/agent-runs/README.md" store-readme
 ok "run store: _emit.mjs + _inbox.mjs + README (existing run data left untouched)"
 
 if [ "$NO_CONSOLE" = false ]; then
