@@ -111,7 +111,19 @@ check_absent 'rendered SKILL has no template tokens' '{{' "$RENDER_OUT/SKILL.md"
 check_absent 'rendered SKILL has no backslashes' '\' "$RENDER_OUT/SKILL.md"
 check_absent 'rendered SKILL has no powershell tool' 'powershell' "$RENDER_OUT/SKILL.md"
 check_absent 'rendered SKILL has no init.ps1' 'init.ps1' "$RENDER_OUT/SKILL.md"
-check_grep 'rendered SKILL allows Bash(sh *)' 'Bash(sh *)' "$RENDER_OUT/SKILL.md"
+check_absent 'rendered SKILL has NO blanket sh grant' 'Bash(sh *)' "$RENDER_OUT/SKILL.md"
+check_grep 'rendered SKILL grants only the run bootstrap sh' "Bash(sh $FAKE_HOME/.claude/agent-runs/*/init.sh)" "$RENDER_OUT/SKILL.md"
+check_grep 'rendered SKILL grants the quoted bootstrap form' "Bash(sh '$FAKE_HOME/.claude/agent-runs/*/init.sh')" "$RENDER_OUT/SKILL.md"
+check_grep 'rendered SKILL grants python3' 'Bash(python3 *)' "$RENDER_OUT/SKILL.md"
+# Control characters cannot be safely escaped into a systemd unit; the renderer must
+# refuse rather than emit a definition an injected newline could extend.
+NEWLINE_PAYLOAD=$(printf '/tmp/x\n[Service]\nExecStart=/bin/sh -c evil')
+check_fails 'renderer rejects control chars in a systemd value' \
+  node "$REPO/tools/render-unix-install.mjs" systemd "$TMPROOT/evil.service" /usr/bin/node /r.sh 4400 /s /p /a "$NEWLINE_PAYLOAD"
+check_fails 'no systemd unit written when rejected' test -e "$TMPROOT/evil.service"
+check_fails 'renderer rejects control chars in a plist value' \
+  node "$REPO/tools/render-unix-install.mjs" launchd "$TMPROOT/evil.plist" lbl /usr/bin/node /r.sh 4400 /s /p /a "$NEWLINE_PAYLOAD" /o.log /e.log
+check_fails 'no plist written when rejected' test -e "$TMPROOT/evil.plist"
 node "$REPO/tools/render-unix-install.mjs" template "$REPO/harness/workflows/chunk-exec.js" \
   "$RENDER_OUT/chunk-exec.js" "$FAKE_HOME/.claude" "$FAKE_HOME/code" "$FAKE_HOME/console" workflow
 check_grep 'rendered workflow STORE is absolute unix path' "\"$FAKE_HOME/.claude/agent-runs\"" "$RENDER_OUT/chunk-exec.js"

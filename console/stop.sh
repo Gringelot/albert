@@ -33,12 +33,15 @@ case "$(uname -s)" in
     ;;
 esac
 
-for pid in $(pgrep -f "$SUPERVISOR" 2>/dev/null || :); do
-  owner=$(ps -o user= -p "$pid" 2>/dev/null | tr -d ' ')
-  if [ "$owner" = "$USER_NAME" ]; then
-    kill "$pid" 2>/dev/null || :
-    info "supervisor stopped"
-  fi
+# Literal substring match: pgrep -f would treat the path as a regular expression.
+ps -Ao pid=,user=,command= 2>/dev/null | while read -r pid owner command; do
+  [ "$owner" = "$USER_NAME" ] || continue
+  case "$command" in
+    *"$SUPERVISOR"*)
+      kill "$pid" 2>/dev/null || :
+      info "supervisor stopped"
+      ;;
+  esac
 done
 
 if pid=$(listener_pid); then

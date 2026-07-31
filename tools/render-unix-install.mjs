@@ -14,8 +14,18 @@ function writeText(file, text) {
   writeFileSync(file, text, 'utf8');
 }
 
+// Control characters cannot be escaped into a safe service-definition value: systemd's
+// parser is line-oriented and splits before it dequotes, so an embedded newline ends the
+// directive and the rest becomes attacker-chosen configuration. Refuse instead.
+function assertNoControlChars(value, what) {
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001F\u007F]/.test(String(value))) fail(`${what} must not contain control characters`);
+  return String(value);
+}
+
 // Escapes text for XML character data and attribute values.
 function xml(value) {
+  assertNoControlChars(value, 'plist value');
   return String(value)
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
@@ -26,6 +36,7 @@ function xml(value) {
 
 // Quotes a systemd value so spaces and specifier characters remain literal.
 function systemd(value) {
+  assertNoControlChars(value, 'systemd unit value');
   return `"${String(value).replaceAll('\\', '\\\\').replaceAll('"', '\\"').replaceAll('%', '%%').replaceAll('$', () => '$$')}"`;
 }
 

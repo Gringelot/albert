@@ -218,12 +218,16 @@ while [ "$#" -gt 0 ]; do
 done
 
 validate_port "$PORT"
-validate_path "$CLAUDE_DIR"
-validate_path "$PROJECTS_DIR"
-validate_path "$CONSOLE_DIR"
+# Absolutize BEFORE validating: absolute_path prepends the invoking directory, so
+# validating the raw argument would miss a control character contributed by the cwd
+# (a relative --console-dir under a directory whose own name embeds a newline).
 CLAUDE_DIR=$(absolute_path "$CLAUDE_DIR")
 PROJECTS_DIR=$(absolute_path "$PROJECTS_DIR")
 CONSOLE_DIR=$(absolute_path "$CONSOLE_DIR")
+validate_path "$CLAUDE_DIR"
+validate_path "$PROJECTS_DIR"
+validate_path "$CONSOLE_DIR"
+validate_path "$XDG_CONFIG_HOME"
 validate_console_dir "$CONSOLE_DIR"
 require_node
 if [ "$DEMO_ONLY" = true ]; then
